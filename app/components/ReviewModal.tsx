@@ -1,12 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle, CheckCircle2, XCircle, Calendar, Tag, FileText } from "lucide-react";
+import { AlertCircle, CheckCircle2, XCircle, Calendar, Tag, FileText, Users } from "lucide-react";
 
 interface ReviewModalProps {
   initialDocType: string;
   initialExpiryDate: string;
-  onConfirm: (confirmedData: { docType: string; expiryDate: string; nickname: string }) => void;
+  onConfirm: (confirmedData: {
+    docType: string;
+    expiryDate: string;
+    nickname: string;
+    familyMember?: string;
+  }) => void;
   onDiscard: () => void;
 }
 
@@ -16,6 +21,14 @@ const ALLOWED_DOC_TYPES = [
   "Vehicle Insurance",
   "Passport",
   "Appliance Warranty",
+];
+
+const FAMILY_MEMBER_OPTIONS = [
+  "Self",
+  "Spouse",
+  "Parents",
+  "Vehicle/Asset",
+  "Other",
 ];
 
 export default function ReviewModal({
@@ -29,11 +42,12 @@ export default function ReviewModal({
   );
   const [expiryDate, setExpiryDate] = useState(initialExpiryDate);
   const [nickname, setNickname] = useState("");
+  const [familyMember, setFamilyMember] = useState(FAMILY_MEMBER_OPTIONS[0]);
   const [error, setError] = useState("");
 
   const handleSave = () => {
     if (!nickname.trim()) {
-      setError("Please provide a nickname (e.g., 'Mom's Passport' or 'Swift PUC').");
+      setError("Please provide a nickname (e.g., 'Mom\u2019s Passport' or 'Swift PUC').");
       return;
     }
     if (!expiryDate) {
@@ -41,13 +55,13 @@ export default function ReviewModal({
       return;
     }
     setError("");
-    onConfirm({ docType, expiryDate, nickname });
+    onConfirm({ docType, expiryDate, nickname, familyMember });
   };
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-gray-100 space-y-5 animate-in fade-in zoom-in-95 duration-200">
-        
+
         {/* Header */}
         <div className="flex items-start justify-between border-b pb-4">
           <div className="flex items-center gap-3">
@@ -72,6 +86,8 @@ export default function ReviewModal({
 
         {/* Form Inputs */}
         <div className="space-y-4">
+
+          {/* Document Type */}
           <div>
             <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider flex items-center gap-1.5 mb-1">
               <FileText className="w-3.5 h-3.5 text-gray-400" /> Document Type
@@ -82,13 +98,12 @@ export default function ReviewModal({
               className="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
             >
               {ALLOWED_DOC_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
+                <option key={type} value={type}>{type}</option>
               ))}
             </select>
           </div>
 
+          {/* Expiry Date */}
           <div>
             <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider flex items-center gap-1.5 mb-1">
               <Calendar className="w-3.5 h-3.5 text-gray-400" /> Expiry Date
@@ -101,6 +116,7 @@ export default function ReviewModal({
             />
           </div>
 
+          {/* Nickname */}
           <div>
             <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider flex items-center gap-1.5 mb-1">
               <Tag className="w-3.5 h-3.5 text-gray-400" /> Nickname
@@ -113,6 +129,22 @@ export default function ReviewModal({
               className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
             />
             <p className="text-[11px] text-gray-400 mt-1">Never enter ID card numbers or personal addresses.</p>
+          </div>
+
+          {/* Family Member */}
+          <div>
+            <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider flex items-center gap-1.5 mb-1">
+              <Users className="w-3.5 h-3.5 text-gray-400" /> Belongs To
+            </label>
+            <select
+              value={familyMember}
+              onChange={(e) => setFamilyMember(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+            >
+              {FAMILY_MEMBER_OPTIONS.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
           </div>
 
           {error && <p className="text-xs text-red-600 font-medium">{error}</p>}
@@ -130,7 +162,7 @@ export default function ReviewModal({
             onClick={handleSave}
             className="flex-1 py-2.5 bg-blue-600 text-white font-medium text-sm rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
           >
-            Confirm & Save
+            Confirm &amp; Save
           </button>
         </div>
 

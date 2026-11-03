@@ -2,7 +2,12 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { NextResponse } from "next/server";
 
 /** Models tried in order. On transient errors (429/503/404) the next is used. */
-const MODEL_FALLBACK_CHAIN = ["gemini-3.8-flash","gemini-3.5-flash-lite","gemini-3.6-flash","gemini-2.5-pro"] as const;
+const MODEL_FALLBACK_CHAIN = [
+  "gemini-3.5-flash-lite", // 1. Extremely light token overhead, highest free RPM, rarely congested
+  "gemini-3.6-flash",      // 2. High availability, fast OCR extraction
+  "gemini-2.5-flash",      // 3. Reliable rock-solid fallback with separate capacity pool
+  "gemini-3.8-flash",      // 4. Latest flagship flash (attempt if earlier versions have regional hiccups)
+] as const;
 
 /** Transient HTTP status codes that warrant a fallback retry. */
 const RETRYABLE_STATUSES = new Set([429, 503, 404]);

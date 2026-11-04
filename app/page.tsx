@@ -2,8 +2,15 @@
 
 import { useState, useEffect, useRef } from "react";
 import {
-  UploadCloud, ShieldCheck, CalendarPlus, Trash2,
-  Download, Info, CheckCircle2, Zap, Search,
+  UploadCloud,
+  ShieldCheck,
+  CalendarPlus,
+  Trash2,
+  Download,
+  Info,
+  CheckCircle2,
+  Zap,
+  Search,
 } from "lucide-react";
 import { useGoogleLogin } from "@react-oauth/google";
 import ReviewModal from "./components/ReviewModal";
@@ -37,7 +44,9 @@ const MAX_CANVAS_WIDTH = 1024; // px — cap before base64 encode to save API qu
 
 function loadDocs(): DocumentRecord[] {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]") as DocumentRecord[];
+    return JSON.parse(
+      localStorage.getItem(STORAGE_KEY) ?? "[]",
+    ) as DocumentRecord[];
   } catch {
     return [];
   }
@@ -49,7 +58,10 @@ function saveDocs(docs: DocumentRecord[]): void {
 
 function sortByUrgency(docs: DocumentRecord[]): DocumentRecord[] {
   return [...docs].sort((a, b) => {
-    return getUrgencyInfo(a.expiryDate).daysRemaining - getUrgencyInfo(b.expiryDate).daysRemaining;
+    return (
+      getUrgencyInfo(a.expiryDate).daysRemaining -
+      getUrgencyInfo(b.expiryDate).daysRemaining
+    );
   });
 }
 
@@ -70,11 +82,11 @@ function compressImageToBase64(file: File): Promise<string> {
     const objectUrl = URL.createObjectURL(file);
 
     img.onload = () => {
-      // Revoke immediately — we only needed it to decode pixel dimensions.
       URL.revokeObjectURL(objectUrl);
 
       const canvas = document.createElement("canvas");
       let { width, height } = img;
+      const MAX_CANVAS_WIDTH = 1024;
 
       if (width > MAX_CANVAS_WIDTH) {
         height = Math.round((height * MAX_CANVAS_WIDTH) / width);
@@ -85,13 +97,11 @@ function compressImageToBase64(file: File): Promise<string> {
       canvas.height = height;
 
       const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        reject(new Error("Could not get canvas 2D context."));
-        return;
-      }
+      if (!ctx) return reject(new Error("Could not get canvas 2D context."));
+
+      // Just draw the image directly. No messy background manipulations.
       ctx.drawImage(img, 0, 0, width, height);
 
-      // Export as JPEG at 75% quality — adequate for text/date OCR.
       resolve(canvas.toDataURL("image/jpeg", 0.75));
     };
 
@@ -117,7 +127,9 @@ export default function DocumentExpiryTracker() {
   const [extractedExpiryDate, setExtractedExpiryDate] = useState("");
 
   const [calendarSyncing, setCalendarSyncing] = useState<number | null>(null);
-  const [activeGuideDocType, setActiveGuideDocType] = useState<string | null>(null);
+  const [activeGuideDocType, setActiveGuideDocType] = useState<string | null>(
+    null,
+  );
   const [showPrivacyInspector, setShowPrivacyInspector] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -132,7 +144,7 @@ export default function DocumentExpiryTracker() {
   const postCalendarEvent = async (
     doc: DocumentRecord,
     accessToken: string,
-    testMode = false
+    testMode = false,
   ) => {
     // Rule 6 §Payload Minimization — only nickname, docType, expiryDate sent.
     const res = await fetch("/api/calendar", {
@@ -160,34 +172,45 @@ export default function DocumentExpiryTracker() {
 
       const ephemeralToken = tokenResponse.access_token;
       // Determine whether this was triggered as a test
-      const isTest = (pendingDocRef as React.MutableRefObject<DocumentRecord & { _testMode?: boolean } | null>).current?._testMode ?? false;
+      const isTest =
+        (
+          pendingDocRef as React.MutableRefObject<
+            (DocumentRecord & { _testMode?: boolean }) | null
+          >
+        ).current?._testMode ?? false;
 
       try {
         const result = await postCalendarEvent(doc, ephemeralToken, isTest);
 
         if (result.success) {
           if (isTest) {
-            setAuditLog(`✓ Test alert scheduled for 5 min from now — API connection verified!`);
+            setAuditLog(
+              `✓ Test alert scheduled for 5 min from now — API connection verified!`,
+            );
           } else {
             // Mark isSynced and persist so a reload preserves the state.
             setDocs((prev) => {
               const updated = prev.map((d) =>
-                d.id === doc.id ? { ...d, isSynced: true } : d
+                d.id === doc.id ? { ...d, isSynced: true } : d,
               );
               saveDocs(updated);
               return updated;
             });
             setAuditLog(
-              `✓ Synced "${doc.nickname}" to Google Calendar with 30-day and 7-day reminders.`
+              `✓ Synced "${doc.nickname}" to Google Calendar with 30-day and 7-day reminders.`,
             );
           }
         } else {
-          setAuditLog(`Calendar sync error: ${result.error ?? "Unknown error"}`);
+          setAuditLog(
+            `Calendar sync error: ${result.error ?? "Unknown error"}`,
+          );
         }
       } catch (err: unknown) {
         console.error("[calendarSync] Fetch error:", err);
         setAuditLog(
-          err instanceof Error ? `Calendar sync failed: ${err.message}` : "Calendar sync failed."
+          err instanceof Error
+            ? `Calendar sync failed: ${err.message}`
+            : "Calendar sync failed.",
         );
       } finally {
         setCalendarSyncing(null);
@@ -200,7 +223,7 @@ export default function DocumentExpiryTracker() {
       console.error("[calendarSync] OAuth error:", err);
       setCalendarSyncing(null);
       pendingDocRef.current = null;
-      setAuditLog("Calendar sync cancelled or failed.")
+      setAuditLog("Calendar sync cancelled or failed.");
     },
 
     // ── Handles popup close / network failure BEFORE OAuth completes ─────────
@@ -209,7 +232,7 @@ export default function DocumentExpiryTracker() {
       console.warn("[calendarSync] Non-OAuth error (popup closed?):", err);
       setCalendarSyncing(null);
       pendingDocRef.current = null;
-      setAuditLog("Calendar sync cancelled or failed.")
+      setAuditLog("Calendar sync cancelled or failed.");
     },
   });
 
@@ -219,7 +242,11 @@ export default function DocumentExpiryTracker() {
    */
   function triggerCalendarSync(doc: DocumentRecord, testMode = false) {
     // We piggyback a _testMode flag on the ref object so onSuccess can read it.
-    (pendingDocRef as React.MutableRefObject<(DocumentRecord & { _testMode?: boolean }) | null>).current = {
+    (
+      pendingDocRef as React.MutableRefObject<
+        (DocumentRecord & { _testMode?: boolean }) | null
+      >
+    ).current = {
       ...doc,
       _testMode: testMode,
     };
@@ -245,66 +272,65 @@ export default function DocumentExpiryTracker() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Strict file type guard: Only accept images, explicitly block PDFs and docs
+    if (!file.type.startsWith("image/")) {
+      setAuditLog(
+        "Error: Only image files (JPG/PNG) are supported for this demo. PDFs are not supported.",
+      );
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
     setIsProcessing(true);
     setAuditLog("Compressing and analyzing document securely...");
 
-    // ZERO-RETENTION: clear the input immediately so the browser releases the
-    // file handle — nothing is kept after we extract the pixels.
+    // ZERO-RETENTION: clear the input immediately
     if (fileInputRef.current) fileInputRef.current.value = "";
 
     try {
-      // ── Canvas compression (Feature 1) ───────────────────────────────────
-      // Downsizes to max 1024 px wide at JPEG 0.75 quality before encoding.
-      // The object URL used internally is revoked inside compressImageToBase64.
       const compressedBase64 = await compressImageToBase64(file);
 
       try {
         const res = await fetch("/api/extract", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          // compressedBase64 is a local variable — never written to any storage.
-          body: JSON.stringify({ imageBase64: compressedBase64, mimeType: "image/jpeg" }),
+          // Sending the full data URL since your backend handles the split
+          body: JSON.stringify({
+            imageBase64: compressedBase64,
+            mimeType: "image/jpeg",
+          }),
         });
 
-        let result: {
-          success: boolean;
-          data?: { docType: string; expiryDate: string };
-          error?: string;
-        };
-        try {
-          result = await res.json();
-        } catch {
-          result = {
-            success: false,
-            error: `Server returned ${res.status} ${res.statusText} (non-JSON body)`,
-          };
-        }
+        let result = await res.json().catch(() => ({
+          success: false,
+          error: `Server returned ${res.status} (non-JSON body)`,
+        }));
 
         if (!res.ok || !result.success) {
           setAuditLog(`Error: ${result.error ?? `HTTP ${res.status}`}`);
         } else {
-          setAuditLog("Image compressed, transmitted, and purged (0 Bytes Retained). No ID numbers stored.");
+          setAuditLog(
+            "Image compressed, transmitted, and purged (0 Bytes Retained).",
+          );
           setExtractedDocType(result.data?.docType ?? "");
           setExtractedExpiryDate(result.data?.expiryDate ?? "");
           setShowReview(true);
         }
       } catch (fetchErr) {
-        console.error(fetchErr);
         setAuditLog(
           fetchErr instanceof Error
             ? `Network error: ${fetchErr.message}`
-            : "Failed to reach extraction API."
+            : "Failed to reach API.",
         );
       } finally {
         setIsProcessing(false);
       }
     } catch (compressionErr) {
-      console.error(compressionErr);
       setIsProcessing(false);
       setAuditLog(
         compressionErr instanceof Error
           ? `Compression failed: ${compressionErr.message}`
-          : "Failed to process image."
+          : "Failed to process image.",
       );
     }
   };
@@ -332,7 +358,9 @@ export default function DocumentExpiryTracker() {
     setDocs(updated);
 
     resetExtractionState();
-    setAuditLog("Saved securely to your browser storage. No image or ID data retained.");
+    setAuditLog(
+      "Saved securely to your browser storage. No image or ID data retained.",
+    );
   };
 
   const handleDiscard = () => {
@@ -354,10 +382,11 @@ export default function DocumentExpiryTracker() {
     <>
       <main className="min-h-screen bg-gray-50 p-8 text-gray-900">
         <div className="max-w-2xl mx-auto space-y-8">
-
           {/* ── HEADER ─────────────────────────────────────────────────── */}
           <header className="text-center space-y-2">
-            <h1 className="text-3xl font-bold tracking-tight">Document Expiry Tracker</h1>
+            <h1 className="text-3xl font-bold tracking-tight">
+              Document Expiry Tracker
+            </h1>
             <p className="text-gray-500 flex items-center justify-center gap-2">
               <ShieldCheck className="w-4 h-4 text-green-600" />
               100% Private. Images are never stored.
@@ -380,12 +409,16 @@ export default function DocumentExpiryTracker() {
               {isProcessing ? (
                 <div className="animate-pulse space-y-4">
                   <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto" />
-                  <p className="text-blue-600 font-medium">Compressing & extracting expiry date...</p>
+                  <p className="text-blue-600 font-medium">
+                    Compressing & extracting expiry date...
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-4">
                   <UploadCloud className="w-12 h-12 text-gray-400 mx-auto" />
-                  <p className="text-lg font-medium">Click to upload a document photo</p>
+                  <p className="text-lg font-medium">
+                    Click to upload a document photo
+                  </p>
                   <p className="text-sm text-gray-500">
                     Supports Driving Licence, PUC, Insurance, Passport, Warranty
                   </p>
@@ -419,8 +452,12 @@ export default function DocumentExpiryTracker() {
 
             {docs.length === 0 ? (
               <div className="bg-white border-2 border-dashed border-gray-200 rounded-xl p-10 text-center space-y-2">
-                <p className="text-gray-500 font-medium">No documents tracked yet.</p>
-                <p className="text-sm text-gray-400">Upload a document above to get started.</p>
+                <p className="text-gray-500 font-medium">
+                  No documents tracked yet.
+                </p>
+                <p className="text-sm text-gray-400">
+                  Upload a document above to get started.
+                </p>
               </div>
             ) : (
               <ul className="space-y-3">
@@ -468,13 +505,14 @@ export default function DocumentExpiryTracker() {
                         </span>
                         <span>
                           Expires{" "}
-                          <span className="font-mono text-gray-700">{doc.expiryDate}</span>
+                          <span className="font-mono text-gray-700">
+                            {doc.expiryDate}
+                          </span>
                         </span>
                       </div>
 
                       {/* ── Action row ── */}
                       <div className="flex gap-2 pt-1 flex-wrap">
-
                         {/* ── Calendar sync / expired state ── */}
                         {isExpired ? (
                           // Expired docs: hide calendar sync; make "How to Renew" primary
@@ -551,7 +589,6 @@ export default function DocumentExpiryTracker() {
                           <Info className="w-3.5 h-3.5" />
                           How to Renew
                         </button>
-
                       </div>
                     </li>
                   );
@@ -570,7 +607,6 @@ export default function DocumentExpiryTracker() {
               Developer: Inspect localStorage
             </button>
           </footer>
-
         </div>
       </main>
 

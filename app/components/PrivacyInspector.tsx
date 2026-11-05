@@ -6,17 +6,20 @@ import { X, ShieldCheck, DatabaseZap } from "lucide-react";
 interface PrivacyInspectorProps {
   isOpen: boolean;
   onClose: () => void;
+  storageKey?: string;
 }
 
-const STORAGE_KEY = "expiryDocs";
-
-export default function PrivacyInspector({ isOpen, onClose }: PrivacyInspectorProps) {
+export default function PrivacyInspector({
+  isOpen,
+  onClose,
+  storageKey = "expiryDocs",
+}: PrivacyInspectorProps) {
   const [rawJson, setRawJson] = useState<string>("");
 
   // Re-read localStorage every time the panel is opened so it's always fresh.
   useEffect(() => {
     if (isOpen) {
-      const raw = localStorage.getItem(STORAGE_KEY) ?? "[]";
+      const raw = localStorage.getItem(storageKey) ?? "[]";
       try {
         // Pretty-print so the evaluator can read it easily.
         setRawJson(JSON.stringify(JSON.parse(raw), null, 2));
@@ -24,7 +27,7 @@ export default function PrivacyInspector({ isOpen, onClose }: PrivacyInspectorPr
         setRawJson(raw);
       }
     }
-  }, [isOpen]);
+  }, [isOpen, storageKey]);
 
   if (!isOpen) return null;
 
@@ -42,7 +45,7 @@ export default function PrivacyInspector({ isOpen, onClose }: PrivacyInspectorPr
             <div>
               <h2 className="text-white font-bold text-base">Privacy Storage Inspector</h2>
               <p className="text-slate-400 text-xs">
-                Raw contents of <code className="text-green-400">localStorage["{STORAGE_KEY}"]</code>
+                Raw contents of <code className="text-green-400">localStorage["{storageKey}"]</code>
               </p>
             </div>
           </div>
@@ -61,15 +64,15 @@ export default function PrivacyInspector({ isOpen, onClose }: PrivacyInspectorPr
           <p className="text-xs text-emerald-800">
             <strong>Zero-retention proof:</strong> Inspect this output — you will find only{" "}
             <code>id</code>, <code>nickname</code>, <code>docType</code>,{" "}
-            <code>expiryDate</code>, and <code>createdAt</code>. No image data,
-            base64 strings, document ID numbers, or personal addresses are ever written here.
+            <code>expiryDate</code>, <code>familyMember</code>, and <code>createdAt</code>.
+            No image data, base64 strings, document ID numbers, or personal addresses are ever written here.
           </p>
         </div>
 
         {/* ── Raw JSON output ─────────────────────────────────────────── */}
         <div className="overflow-auto flex-1 bg-slate-950 p-5">
           {isEmpty ? (
-            <p className="text-slate-500 text-sm font-mono">// No documents tracked yet.</p>
+            <p className="text-slate-500 text-sm font-mono">// No documents tracked yet in this user vault.</p>
           ) : (
             <pre className="text-green-400 text-xs font-mono leading-relaxed whitespace-pre-wrap break-words">
               <code>{rawJson}</code>
@@ -96,4 +99,3 @@ export default function PrivacyInspector({ isOpen, onClose }: PrivacyInspectorPr
     </div>
   );
 }
-

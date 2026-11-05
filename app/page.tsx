@@ -11,8 +11,10 @@ import {
   CheckCircle2,
   Zap,
   Search,
+  Lock,
 } from "lucide-react";
 import { useGoogleLogin } from "@react-oauth/google";
+import { useUser, SignInButton } from "@clerk/nextjs";
 import ReviewModal from "./components/ReviewModal";
 import RenewalGuide from "./components/RenewalGuide";
 import PrivacyInspector from "./components/PrivacyInspector";
@@ -22,7 +24,7 @@ import { downloadICS } from "./lib/calendarSync";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 /**
- * Shape of each record persisted in localStorage under 'expiryDocs'.
+ * Shape of each record persisted in localStorage under user-scoped keys.
  * Rules.md §2 Storage Scope — only these fields are ever written.
  */
 interface DocumentRecord {
@@ -37,23 +39,34 @@ interface DocumentRecord {
   familyMember?: string;
 }
 
-const STORAGE_KEY = "expiryDocs";
-const MAX_CANVAS_WIDTH = 1024; // px — cap before base64 encode to save API quota
-
 // ── Storage helpers ───────────────────────────────────────────────────────────
 
-function loadDocs(): DocumentRecord[] {
+function loadDocs(key: string): DocumentRecord[] {
   try {
-    return JSON.parse(
-      localStorage.getItem(STORAGE_KEY) ?? "[]",
-    ) as DocumentRecord[];
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    // Validation filter: ensure corrupted records are safely discarded
+    return parsed.filter(
+      (item): item is DocumentRecord =>
+        Boolean(
+          item &&
+            typeof item === "object" &&
+            typeof item.id === "number" &&
+            typeof item.nickname === "string" &&
+            typeof item.docType === "string" &&
+            typeof item.expiryDate === "string"
+        )
+    );
   } catch {
     return [];
   }
 }
 
-function saveDocs(docs: DocumentRecord[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(docs));
+function saveDocs(key: string, docs: DocumentRecord[]): void {
+  localStorage.setItem(key, JSON.stringify(docs));
 }
 
 function sortByUrgency(docs: DocumentRecord[]): DocumentRecord[] {
@@ -86,7 +99,7 @@ function compressImageToBase64(file: File): Promise<string> {
 
       const canvas = document.createElement("canvas");
       let { width, height } = img;
-      const MAX_CANVAS_WIDTH = 1024;
+      const MAX_CANVAS_WIDTH = 1024; // px — cap before base64 encode to save API quota
 
       if (width > MAX_CANVAS_WIDTH) {
         height = Math.round((height * MAX_CANVAS_WIDTH) / width);
@@ -99,9 +112,7 @@ function compressImageToBase64(file: File): Promise<string> {
       const ctx = canvas.getContext("2d");
       if (!ctx) return reject(new Error("Could not get canvas 2D context."));
 
-      // Just draw the image directly. No messy background manipulations.
       ctx.drawImage(img, 0, 0, width, height);
-
       resolve(canvas.toDataURL("image/jpeg", 0.75));
     };
 
@@ -117,6 +128,9 @@ function compressImageToBase64(file: File): Promise<string> {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function DocumentExpiryTracker() {
+  const { user, isLoaded, isSignedIn } = useUser();
+  const storageKey = user ? `expiryDocs_${user.id}` : null;
+
   const [isProcessing, setIsProcessing] = useState(false);
   const [auditLog, setAuditLog] = useState<string>("");
 
@@ -127,26 +141,29 @@ export default function DocumentExpiryTracker() {
   const [extractedExpiryDate, setExtractedExpiryDate] = useState("");
 
   const [calendarSyncing, setCalendarSyncing] = useState<number | null>(null);
-  const [activeGuideDocType, setActiveGuideDocType] = useState<string | null>(
-    null,
-  );
+  const [activeGuideDocType, setActiveGuideDocType] = useState<string | null>(null);
   const [showPrivacyInspector, setShowPrivacyInspector] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingDocRef = useRef<DocumentRecord | null>(null);
 
+  // ── Scoped Storage Lifecycle ───────────────────────────────────────────────
+
+  useEffect(() => {
+    if (storageKey) {
+      setDocs(sortByUrgency(loadDocs(storageKey)));
+    } else {
+      setDocs([]);
+    }
+  }, [storageKey]);
+
   // ── Google Calendar OAuth ───────────────────────────────────────────────────
 
-  /**
-   * Sends a calendar event to /api/calendar using the ephemeral access_token.
-   * Rule 6 §Ephemeral Auth: token lives only in this async function scope.
-   */
   const postCalendarEvent = async (
     doc: DocumentRecord,
     accessToken: string,
-    testMode = false,
+    testMode = false
   ) => {
-    // Rule 6 §Payload Minimization — only nickname, docType, expiryDate sent.
     const res = await fetch("/api/calendar", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -163,7 +180,6 @@ export default function DocumentExpiryTracker() {
   };
 
   const calendarLogin = useGoogleLogin({
-    // Rule 6 §Scope: minimum required permission only.
     scope: "https://www.googleapis.com/auth/calendar.events",
 
     onSuccess: async (tokenResponse) => {
@@ -171,7 +187,6 @@ export default function DocumentExpiryTracker() {
       if (!doc) return;
 
       const ephemeralToken = tokenResponse.access_token;
-      // Determine whether this was triggered as a test
       const isTest =
         (
           pendingDocRef as React.MutableRefObject<
@@ -185,32 +200,31 @@ export default function DocumentExpiryTracker() {
         if (result.success) {
           if (isTest) {
             setAuditLog(
-              `✓ Test alert scheduled for 5 min from now — API connection verified!`,
+              `✓ Test alert scheduled for 5 min from now — API connection verified!`
             );
           } else {
-            // Mark isSynced and persist so a reload preserves the state.
             setDocs((prev) => {
               const updated = prev.map((d) =>
-                d.id === doc.id ? { ...d, isSynced: true } : d,
+                d.id === doc.id ? { ...d, isSynced: true } : d
               );
-              saveDocs(updated);
+              if (storageKey) {
+                saveDocs(storageKey, updated);
+              }
               return updated;
             });
             setAuditLog(
-              `✓ Synced "${doc.nickname}" to Google Calendar with 30-day and 7-day reminders.`,
+              `✓ Synced "${doc.nickname}" to Google Calendar with 30-day and 7-day reminders.`
             );
           }
         } else {
-          setAuditLog(
-            `Calendar sync error: ${result.error ?? "Unknown error"}`,
-          );
+          setAuditLog(`Calendar sync error: ${result.error ?? "Unknown error"}`);
         }
       } catch (err: unknown) {
         console.error("[calendarSync] Fetch error:", err);
         setAuditLog(
           err instanceof Error
             ? `Calendar sync failed: ${err.message}`
-            : "Calendar sync failed.",
+            : "Calendar sync failed."
         );
       } finally {
         setCalendarSyncing(null);
@@ -218,7 +232,6 @@ export default function DocumentExpiryTracker() {
       }
     },
 
-    // ── Handles OAuth-level errors (invalid client, scope denied, etc.) ──────
     onError: (err) => {
       console.error("[calendarSync] OAuth error:", err);
       setCalendarSyncing(null);
@@ -226,8 +239,6 @@ export default function DocumentExpiryTracker() {
       setAuditLog("Calendar sync cancelled or failed.");
     },
 
-    // ── Handles popup close / network failure BEFORE OAuth completes ─────────
-    // Without this, closing the popup leaves calendarSyncing set forever.
     onNonOAuthError: (err) => {
       console.warn("[calendarSync] Non-OAuth error (popup closed?):", err);
       setCalendarSyncing(null);
@@ -236,12 +247,7 @@ export default function DocumentExpiryTracker() {
     },
   });
 
-  /**
-   * Stores the target doc (with optional testMode flag) then triggers OAuth.
-   * Rule 6 §Client-Side Trigger: must only be called from an onClick handler.
-   */
   function triggerCalendarSync(doc: DocumentRecord, testMode = false) {
-    // We piggyback a _testMode flag on the ref object so onSuccess can read it.
     (
       pendingDocRef as React.MutableRefObject<
         (DocumentRecord & { _testMode?: boolean }) | null
@@ -253,12 +259,6 @@ export default function DocumentExpiryTracker() {
     setCalendarSyncing(doc.id);
     calendarLogin();
   }
-
-  // ── Lifecycle ───────────────────────────────────────────────────────────────
-
-  useEffect(() => {
-    setDocs(sortByUrgency(loadDocs()));
-  }, []);
 
   const resetExtractionState = () => {
     setShowReview(false);
@@ -272,10 +272,9 @@ export default function DocumentExpiryTracker() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Strict file type guard: Only accept images, explicitly block PDFs and docs
     if (!file.type.startsWith("image/")) {
       setAuditLog(
-        "Error: Only image files (JPG/PNG) are supported for this demo. PDFs are not supported.",
+        "Error: Only image files (JPG/PNG) are supported. Other file types are blocked."
       );
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
@@ -284,7 +283,6 @@ export default function DocumentExpiryTracker() {
     setIsProcessing(true);
     setAuditLog("Compressing and analyzing document securely...");
 
-    // ZERO-RETENTION: clear the input immediately
     if (fileInputRef.current) fileInputRef.current.value = "";
 
     try {
@@ -294,7 +292,6 @@ export default function DocumentExpiryTracker() {
         const res = await fetch("/api/extract", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          // Sending the full data URL since your backend handles the split
           body: JSON.stringify({
             imageBase64: compressedBase64,
             mimeType: "image/jpeg",
@@ -310,7 +307,7 @@ export default function DocumentExpiryTracker() {
           setAuditLog(`Error: ${result.error ?? `HTTP ${res.status}`}`);
         } else {
           setAuditLog(
-            "Image compressed, transmitted, and purged (0 Bytes Retained).",
+            "Image compressed, transmitted, and purged (0 Bytes Retained). No ID numbers stored."
           );
           setExtractedDocType(result.data?.docType ?? "");
           setExtractedExpiryDate(result.data?.expiryDate ?? "");
@@ -320,7 +317,7 @@ export default function DocumentExpiryTracker() {
         setAuditLog(
           fetchErr instanceof Error
             ? `Network error: ${fetchErr.message}`
-            : "Failed to reach API.",
+            : "Failed to reach extraction API."
         );
       } finally {
         setIsProcessing(false);
@@ -330,7 +327,7 @@ export default function DocumentExpiryTracker() {
       setAuditLog(
         compressionErr instanceof Error
           ? `Compression failed: ${compressionErr.message}`
-          : "Failed to process image.",
+          : "Failed to process image."
       );
     }
   };
@@ -343,6 +340,11 @@ export default function DocumentExpiryTracker() {
     nickname: string;
     familyMember?: string;
   }) => {
+    if (!storageKey) {
+      setAuditLog("Error: You must be signed in to save documents.");
+      return;
+    }
+
     const newDoc: DocumentRecord = {
       id: Date.now(),
       createdAt: new Date().toISOString(),
@@ -352,14 +354,14 @@ export default function DocumentExpiryTracker() {
       familyMember: confirmed.familyMember,
     };
 
-    const existing = loadDocs();
+    const existing = loadDocs(storageKey);
     const updated = sortByUrgency([...existing, newDoc]);
-    saveDocs(updated);
+    saveDocs(storageKey, updated);
     setDocs(updated);
 
     resetExtractionState();
     setAuditLog(
-      "Saved securely to your browser storage. No image or ID data retained.",
+      "Saved securely to your browser storage. No image or ID data retained."
     );
   };
 
@@ -371,25 +373,86 @@ export default function DocumentExpiryTracker() {
   // ── Document list actions ───────────────────────────────────────────────────
 
   const handleDelete = (id: number) => {
-    const updated = sortByUrgency(loadDocs().filter((d) => d.id !== id));
-    saveDocs(updated);
+    if (!storageKey) return;
+    const updated = sortByUrgency(loadDocs(storageKey).filter((d) => d.id !== id));
+    saveDocs(storageKey, updated);
     setDocs(updated);
   };
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Guard Views ────────────────────────────────────────────────────────────
 
+  // 1. Loading View
+  if (!isLoaded) {
+    return (
+      <main className="min-h-[70vh] bg-gray-50 flex flex-col items-center justify-center p-8">
+        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="text-sm font-semibold text-gray-600">
+          Loading your private vault...
+        </p>
+      </main>
+    );
+  }
+
+  // 2. Logged-out Hero Landing View
+  if (!isSignedIn) {
+    return (
+      <main className="min-h-[85vh] bg-gray-50 p-6 sm:p-12 text-gray-900 flex items-center justify-center">
+        <div className="max-w-xl mx-auto text-center bg-white border border-gray-200 rounded-3xl p-8 sm:p-12 shadow-sm space-y-6">
+          <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto shadow-inner">
+            <Lock className="w-8 h-8" />
+          </div>
+
+          <div className="space-y-2">
+            <h1 className="text-3xl font-bold tracking-tight text-gray-900">
+              Private Document Expiry Vault
+            </h1>
+            <p className="text-gray-500 text-sm leading-relaxed max-w-md mx-auto">
+              Track renewal dates for Driving Licences, PUCs, Vehicle Insurance,
+              Passports, and Appliance Warranties. Your documents are stored
+              strictly in your user-scoped browser vault with zero database retention.
+            </p>
+          </div>
+
+          <div className="pt-2">
+            <SignInButton mode="modal">
+              <button className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-8 py-3.5 text-sm font-semibold text-white shadow-md hover:bg-blue-700 transition-all hover:shadow-lg">
+                Sign in to Access Your Vault
+              </button>
+            </SignInButton>
+          </div>
+
+          <div className="pt-6 border-t border-gray-100 grid grid-cols-3 gap-3 text-xs text-gray-500">
+            <div className="flex flex-col items-center gap-1">
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              <span>100% Client-Side</span>
+            </div>
+            <div className="flex flex-col items-center gap-1">
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              <span>Zero Database</span>
+            </div>
+            <div className="flex flex-col items-center gap-1">
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              <span>Zero Image Storage</span>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // 3. Authenticated Dashboard View
   return (
     <>
-      <main className="min-h-screen bg-gray-50 p-8 text-gray-900">
+      <main className="min-h-screen bg-gray-50 p-6 sm:p-8 text-gray-900">
         <div className="max-w-2xl mx-auto space-y-8">
           {/* ── HEADER ─────────────────────────────────────────────────── */}
           <header className="text-center space-y-2">
             <h1 className="text-3xl font-bold tracking-tight">
               Document Expiry Tracker
             </h1>
-            <p className="text-gray-500 flex items-center justify-center gap-2">
+            <p className="text-gray-500 flex items-center justify-center gap-2 text-sm">
               <ShieldCheck className="w-4 h-4 text-green-600" />
-              100% Private. Images are never stored.
+              User-Scoped Vault ({user?.primaryEmailAddress?.emailAddress ?? user?.fullName ?? "Active User"})
             </p>
           </header>
 
@@ -453,7 +516,7 @@ export default function DocumentExpiryTracker() {
             {docs.length === 0 ? (
               <div className="bg-white border-2 border-dashed border-gray-200 rounded-xl p-10 text-center space-y-2">
                 <p className="text-gray-500 font-medium">
-                  No documents tracked yet.
+                  No documents tracked yet in this vault.
                 </p>
                 <p className="text-sm text-gray-400">
                   Upload a document above to get started.
@@ -483,7 +546,7 @@ export default function DocumentExpiryTracker() {
                           </span>
                           {/* Family member chip */}
                           {doc.familyMember && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500 border border-gray-200">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200">
                               {doc.familyMember}
                             </span>
                           )}
@@ -500,7 +563,7 @@ export default function DocumentExpiryTracker() {
 
                       {/* ── Meta row: doc type + expiry date ── */}
                       <div className="flex items-center gap-4 text-xs text-gray-500">
-                        <span className="bg-gray-100 px-2 py-0.5 rounded font-medium">
+                        <span className="bg-gray-100 px-2 py-0.5 rounded font-medium text-gray-700">
                           {doc.docType}
                         </span>
                         <span>
@@ -515,12 +578,10 @@ export default function DocumentExpiryTracker() {
                       <div className="flex gap-2 pt-1 flex-wrap">
                         {/* ── Calendar sync / expired state ── */}
                         {isExpired ? (
-                          // Expired docs: hide calendar sync; make "How to Renew" primary
                           <span className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 cursor-default">
                             Expired — Renewal Required
                           </span>
                         ) : doc.isSynced ? (
-                          // Already synced: show static confirmation badge
                           <button
                             disabled
                             className="flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200 cursor-not-allowed"
@@ -529,7 +590,6 @@ export default function DocumentExpiryTracker() {
                             Synced to Calendar
                           </button>
                         ) : (
-                          // Normal sync + test alert buttons
                           <>
                             <button
                               onClick={() => triggerCalendarSync(doc)}
@@ -549,7 +609,6 @@ export default function DocumentExpiryTracker() {
                               )}
                             </button>
 
-                            {/* Test Alert — schedules event 5 min from now */}
                             <button
                               onClick={() => triggerCalendarSync(doc, true)}
                               disabled={calendarSyncing === doc.id}
@@ -577,12 +636,12 @@ export default function DocumentExpiryTracker() {
                           Download .ics
                         </button>
 
-                        {/* ── How to Renew — primary when expired ── */}
+                        {/* ── How to Renew ── */}
                         <button
                           onClick={() => setActiveGuideDocType(doc.docType)}
                           className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors ${
                             isExpired
-                              ? "text-white bg-violet-600 hover:bg-violet-700 border-violet-700"
+                              ? "text-white bg-violet-600 hover:bg-violet-700 border-violet-700 shadow-sm"
                               : "text-violet-600 hover:text-violet-800 hover:bg-violet-50 border-violet-200"
                           }`}
                         >
@@ -620,6 +679,7 @@ export default function DocumentExpiryTracker() {
       {/* ── PRIVACY STORAGE INSPECTOR MODAL ─────────────────────────────── */}
       <PrivacyInspector
         isOpen={showPrivacyInspector}
+        storageKey={storageKey ?? "expiryDocs"}
         onClose={() => setShowPrivacyInspector(false)}
       />
     </>

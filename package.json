@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@clerk/nextjs": "^5.7.5",
     "@google/genai": "^2.32.0",
     "@react-oauth/google": "^0.13.5",
     "canvas-confetti": "^1.9.4",

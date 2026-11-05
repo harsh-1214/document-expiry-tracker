@@ -47,7 +47,6 @@ export async function POST(req: Request) {
     // ── 2. Build the Google Calendar event body ──────────────────────────────
     // Rule 6 §Payload Minimization: summary contains only nickname + docType;
     // description is static text. No raw extraction output or JSON dumps.
-    let calendarEvent: object;
 
     let startDateTime, endDateTime, timeZone, summary, description, overrides;
 
@@ -78,7 +77,7 @@ export async function POST(req: Request) {
       ];
     }
 
-    calendarEvent = {
+    const calendarEvent = {
       summary,
       description,
       start: { dateTime: startDateTime, timeZone },

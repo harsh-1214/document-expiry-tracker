@@ -1,7 +1,15 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
+import {
+  ClerkProvider,
+  SignInButton,
+  SignedIn,
+  SignedOut,
+  UserButton,
+} from "@clerk/nextjs";
 import { GoogleOAuthProvider } from "@react-oauth/google";
+import Header from "./components/Header";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -25,22 +33,19 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        {/*
-          GoogleOAuthProvider must wrap the entire tree so that useGoogleLogin
-          hooks inside client components can access the OAuth context.
-          NEXT_PUBLIC_GOOGLE_CLIENT_ID is set in .env.local and is safe to
-          expose to the browser (it is a public OAuth client ID, not a secret).
-        */}
-        <GoogleOAuthProvider
-          clientId={process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? ""}
+    <ClerkProvider>
+      <html lang="en">
+        <body
+          className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         >
-          {children}
-        </GoogleOAuthProvider>
-      </body>
-    </html>
+          <Header />
+          <GoogleOAuthProvider
+            clientId={process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? ""}
+          >
+            {children}
+          </GoogleOAuthProvider>
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }

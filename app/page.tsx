@@ -132,6 +132,7 @@ export default function DocumentExpiryTracker() {
   const storageKey = user ? `expiryDocs_${user.id}` : null;
 
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const [auditLog, setAuditLog] = useState<string>("");
 
   const [docs, setDocs] = useState<DocumentRecord[]>([]);
@@ -268,8 +269,7 @@ export default function DocumentExpiryTracker() {
 
   // ── File upload & Gemini extraction ────────────────────────────────────────
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const processFile = async (file: File) => {
     if (!file) return;
 
     if (!file.type.startsWith("image/")) {
@@ -329,6 +329,32 @@ export default function DocumentExpiryTracker() {
           ? `Compression failed: ${compressionErr.message}`
           : "Failed to process image."
       );
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processFile(file);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      processFile(file);
     }
   };
 
@@ -460,7 +486,14 @@ export default function DocumentExpiryTracker() {
           {!showReview && (
             <div
               onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-gray-300 rounded-xl p-12 text-center bg-white cursor-pointer hover:border-blue-500 transition-colors shadow-sm"
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              className={`border-2 border-dashed rounded-xl p-10 flex flex-col items-center justify-center text-center cursor-pointer transition-colors shadow-sm ${
+                isDragging
+                  ? "border-blue-500 bg-blue-50"
+                  : "border-gray-300 bg-white hover:border-blue-500"
+              }`}
             >
               <input
                 type="file"
@@ -477,14 +510,20 @@ export default function DocumentExpiryTracker() {
                   </p>
                 </div>
               ) : (
-                <div className="space-y-4">
-                  <UploadCloud className="w-12 h-12 text-gray-400 mx-auto" />
-                  <p className="text-lg font-medium">
-                    Click to upload a document photo
-                  </p>
-                  <p className="text-sm text-gray-500">
-                    Supports Driving Licence, PUC, Insurance, Passport, Warranty
-                  </p>
+                <div className="space-y-4 flex flex-col items-center">
+                  <UploadCloud
+                    className={`w-12 h-12 transition-colors ${
+                      isDragging ? "text-blue-600" : "text-gray-400"
+                    }`}
+                  />
+                  <div>
+                    <p className="text-lg font-medium text-gray-900">
+                      Drag & drop your document image here or click to browse
+                    </p>
+                    <p className="text-sm text-gray-500 mt-1">
+                      Supports Driving Licence, PUC, Insurance, Passport, Warranty
+                    </p>
+                  </div>
                 </div>
               )}
             </div>

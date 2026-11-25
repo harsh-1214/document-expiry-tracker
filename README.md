@@ -2,6 +2,8 @@
 
 A privacy-first, AI-powered document expiration tracker built with **Next.js 14**, **Google Gemini Vision**, **Clerk**, and the **Google Calendar API**. Designed around a **zero-retention architecture**, it extracts expiration dates from sensitive documents and schedules automated renewal alerts without ever storing user files or PII in a cloud database.
 
+**[Live Demo](https://document-expiry-tracker-iota.vercel.app)**
+
 ---
 
 ## The Problem

@@ -8,7 +8,10 @@ interface RenewalGuideProps {
   onClose: () => void;
 }
 
-const GUIDE_DATA: Record<string, { url: string; title: string; steps: string[] }> = {
+const GUIDE_DATA: Record<
+  string,
+  { url: string; title: string; steps: string[] }
+> = {
   "Driving Licence": {
     url: "https://sarathi.parivahan.gov.in/",
     title: "Parivahan Sarathi (Ministry of Road Transport)",
@@ -27,7 +30,7 @@ const GUIDE_DATA: Record<string, { url: string; title: string; steps: string[] }
       "Carry your vehicle to the nearest fuel pump with a PUC kiosk.",
     ],
   },
-  "Passport": {
+  Passport: {
     url: "https://www.passportindia.gov.in/",
     title: "Passport Seva (Ministry of External Affairs)",
     steps: [
@@ -56,7 +59,11 @@ const GUIDE_DATA: Record<string, { url: string; title: string; steps: string[] }
   },
 };
 
-export default function RenewalGuide({ docType, isOpen, onClose }: RenewalGuideProps) {
+export default function RenewalGuide({
+  docType,
+  isOpen,
+  onClose,
+}: RenewalGuideProps) {
   if (!isOpen || !docType) return null;
 
   const guide = GUIDE_DATA[docType] || {
@@ -68,14 +75,16 @@ export default function RenewalGuide({ docType, isOpen, onClose }: RenewalGuideP
   return (
     <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
       <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
-        
         {/* Header */}
         <div className="bg-blue-600 p-5 flex items-start justify-between text-white">
           <div>
             <h2 className="text-xl font-bold">How to Renew</h2>
             <p className="text-blue-100 text-sm mt-1">{docType}</p>
           </div>
-          <button onClick={onClose} className="p-1 hover:bg-blue-500 rounded-full transition-colors">
+          <button
+            onClick={onClose}
+            className="p-1 hover:bg-blue-500 rounded-full transition-colors"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -103,18 +112,21 @@ export default function RenewalGuide({ docType, isOpen, onClose }: RenewalGuideP
               <ShieldCheck className="w-4 h-4" /> Official Portal
             </div>
             <p className="text-sm font-medium text-slate-900">{guide.title}</p>
-            
+
             {guide.url !== "#" ? (
-              <a 
-                href={guide.url} 
-                target="_blank" 
+              <a
+                href={guide.url}
+                target="_blank"
                 rel="noopener noreferrer"
                 className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white py-2.5 rounded-lg text-sm font-medium transition-colors"
               >
                 Proceed to Portal <ExternalLink className="w-4 h-4" />
               </a>
             ) : (
-              <button disabled className="w-full py-2.5 bg-slate-200 text-slate-500 rounded-lg text-sm font-medium cursor-not-allowed">
+              <button
+                disabled
+                className="w-full py-2.5 bg-slate-200 text-slate-500 rounded-lg text-sm font-medium cursor-not-allowed"
+              >
                 Refer to local provider
               </button>
             )}
